@@ -1,0 +1,41 @@
+# EGASN: Epipolar Graph-Attention Segmentation Network
+# Configuration for Cityscapes Dataset (19 classes)
+
+model:
+  backbone: mobilenet_v2
+  aspp_dilations: [6, 12, 18]
+  feature_channels: 256
+  num_classes: 19
+  attention_heads: 4
+  lambda_init: 0.1
+
+graph:
+  orb_features: 2000
+  flann_table_number: 6
+  flann_key_size: 12
+  flann_multi_probe_level: 1
+  ransac_threshold: 3.0
+  ratio_test: 0.75
+  min_inliers: 8
+
+training:
+  epochs: 200
+  batch_size: 4
+  lr: 0.001
+  weight_decay: 0.0001
+  scheduler: cosine
+  crop_size: [768, 768]
+  beta_annealing_epochs: 10
+  gamma_tc: 0.5
+
+data:
+  root: /path/to/cityscapes
+  num_workers: 4
+  input_size: [1024, 2048]
+
+# Root-level convenience keys for backwards compatibility with training scripts
+epochs: 200
+batch_size: 4
+lr: 0.001
+weight_decay: 0.0001
+num_classes: 19
