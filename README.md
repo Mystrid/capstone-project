@@ -41,6 +41,7 @@
 Real-world autonomous navigation demands semantic scene understanding that simultaneously satisfies **high spatial fidelity**, **temporal continuity**, and **real-time edge latency**. Contemporary single-frame deep convolutional networks achieve strong per-frame accuracy (mIoU) but suffer from catastrophic inter-frame flickering. Conversely, traditional video semantic segmentation (VSS) networks rely on heavy deep optical flow models (e.g., FlowNet, RAFT) that violate edge thermal and compute budgets (sub-10 FPS).
 
 **EGASN** bridges this divide through a hybrid architecture:
+
 1. Replaces compute-heavy deep optical flow with **real-time classical visual odometry (OpenCV ORB + epipolar geometry)**.
 2. Formulates a **spatio-temporal graph** where edges are validated by the fundamental matrix $p_t^T F p_{t-1} = 0$.
 3. Employs a **Cross-Attention Gating module** that selectively propagates semantic features along confident geometric tracks while filtering occlusions.
@@ -105,11 +106,14 @@ Real-world autonomous navigation demands semantic scene understanding that simul
 ```
 
 ### 1. Spatial Feature Extraction Backbone
+
 - **Base Encoder:** MobileNetV2 utilizing depthwise-separable inverted residual bottlenecks, delivering an optimal balance of representational capacity and parameter efficiency.
 - **Pruned ASPP:** An Atrous Spatial Pyramid Pooling module with dilations $[6, 12, 18]$, extracting contextual information across multiple receptive fields into a 256-channel intermediate representation $X_t \in \mathbb{R}^{256 \times H' \times W'}$.
 
 ### 2. Epipolar Graph Construction via OpenCV
+
 In parallel to the CNN forward pass:
+
 - **ORB Feature Extraction:** Detects up to 2000 multi-scale keypoints and FAST binary descriptors on grayscale frames $I_{t-1}$ and $I_t$.
 - **FLANN Matching & Ratio Test:** Multi-probe LSH index matching filtered via Lowe's ratio test ($\tau = 0.75$).
 - **Epipolar Geometric Verification:** Evaluates the Fundamental Matrix $F \in \mathbb{R}^{3 \times 3}$ using RANSAC:
@@ -118,7 +122,9 @@ In parallel to the CNN forward pass:
 - **Delaunay Triangulation:** Projects surviving inliers onto a Delaunay mesh over the image plane to interpolate sparse motion vectors into a smooth, pseudo-dense flow field $\mathcal{F}_{t-1 \to t}$.
 
 ### 3. Cross-Attention Temporal Gating
+
 Rather than naive feature averaging (which corrupts spatial representations when tracking fails during occlusion), EGASN employs transformer cross-attention:
+
 - **Projections:**
   $$Q = W_q X_t, \quad K = W_k X_t^{warped}, \quad V = W_v X_t^{warped}$$
 - **Reliability Attention Map:**
@@ -128,7 +134,9 @@ Rather than naive feature averaging (which corrupts spatial representations when
   where $\lambda$ is a learnable scaling factor (initialized to $0.1$). When visual appearance deviates due to occlusion or track loss, attention weights naturally decay to zero, reverting smoothly to pure spatial CNN representations.
 
 ### 4. Evidential Deep Learning for Uncertainty
+
 EGASN parameterizes a Dirichlet distribution $\text{Dir}(\boldsymbol{\alpha})$ over class probabilities:
+
 - $\alpha_k = e_k + 1$, where $e_k \ge 0$ represents evidence from the Dirichlet head.
 - Expected Class Probability: $\hat{p}_k = \alpha_k / S$, where $S = \sum_{c=1}^K \alpha_c$.
 - Spatial Uncertainty: $U = K / S \in (0, 1]$. High uncertainty identifies camera occlusion, sensor dirt, or out-of-distribution environments.
@@ -143,28 +151,29 @@ Evaluated on the **Cityscapes Video Dataset** (19 semantic classes, 500 validati
 
 ### Main Quantitative Results
 
-| Architecture | Core Paradigm | mIoU (%) ↑ | fwIoU (%) ↑ | FPS (Edge Orin) ↑ |
-| :--- | :--- | :---: | :---: | :---: |
-| **SegNet** *(Badrinarayanan et al.)* | Pure Spatial (Light) | 60.5 | 52.1 | **65.0** |
-| **DeepLabV3+** *(Chen et al.)* | Pure Spatial (Heavy ResNet-50) | **78.3** | 64.5 | 18.2 |
-| **NetWarp** *(Gadde et al.)* | CNN Deep Optical Flow Fusion | 80.1 | 71.3 | 4.5 |
-| **EGASN (Ours)** | **Graph-Attention + OpenCV** | **77.4** | **81.2** | **38.6** |
+| Architecture                         | Core Paradigm                  | mIoU (%) ↑ | fwIoU (%) ↑ | FPS (Edge Orin) ↑ |
+| :----------------------------------- | :----------------------------- | :--------: | :---------: | :---------------: |
+| **SegNet** _(Badrinarayanan et al.)_ | Pure Spatial (Light)           |    60.5    |    52.1     |     **65.0**      |
+| **DeepLabV3+** _(Chen et al.)_       | Pure Spatial (Heavy ResNet-50) |  **78.3**  |    64.5     |       18.2        |
+| **NetWarp** _(Gadde et al.)_         | CNN Deep Optical Flow Fusion   |    80.1    |    71.3     |        4.5        |
+| **EGASN (Ours)**                     | **Graph-Attention + OpenCV**   |  **77.4**  |  **81.2**   |     **38.6**      |
 
 > **Takeaway:** EGASN achieves an unprecedented **81.2% fwIoU**, practically eliminating inter-frame flickering while maintaining **38.6 FPS**—making it uniquely viable for autonomous vehicle closed-loop control.
 
 ### Ablation Study
 
-| Spatial CNN | OpenCV Graph | Cross-Attention Gate | mIoU (%) | fwIoU (%) | FPS |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| ✓ | | | 74.2 | 58.4 | 45.1 |
-| ✓ | ✓ (Naive Average) | | 72.8 | 72.1 | 41.3 |
-| ✓ | ✓ | ✓ (Full EGASN) | **77.4** | **81.2** | **38.6** |
+| Spatial CNN |   OpenCV Graph    | Cross-Attention Gate | mIoU (%) | fwIoU (%) |   FPS    |
+| :---------: | :---------------: | :------------------: | :------: | :-------: | :------: |
+|      ✓      |                   |                      |   74.2   |   58.4    |   45.1   |
+|      ✓      | ✓ (Naive Average) |                      |   72.8   |   72.1    |   41.3   |
+|      ✓      |         ✓         |    ✓ (Full EGASN)    | **77.4** | **81.2**  | **38.6** |
 
 ---
 
 ## Installation
 
 ### Prerequisites
+
 - Python >= 3.8
 - CUDA >= 11.8 (recommended for GPU acceleration)
 - CMake and C++ build tools (for OpenCV compilation if building from source)
@@ -195,10 +204,12 @@ pip install -e .
 ## Dataset Preparation
 
 Download the [Cityscapes Dataset](https://www.cityscapes-dataset.com/):
+
 - `leftImg8bit_sequence_trainvaltest.zip` (video frame sequences)
 - `gtFine_trainvaltest.zip` (fine pixel-level annotations)
 
 Extract into your dataset directory:
+
 ```text
 cityscapes/
 ├── leftImg8bit_sequence/
@@ -212,6 +223,7 @@ cityscapes/
 ```
 
 Update `configs/egasn_cityscapes.yaml`:
+
 ```yaml
 data:
   root: /path/to/cityscapes
@@ -230,6 +242,7 @@ python scripts/train.py --config configs/egasn_cityscapes.yaml --device cuda
 ```
 
 To resume from a checkpoint:
+
 ```bash
 python scripts/train.py --config configs/egasn_cityscapes.yaml --resume checkpoints/epoch_50.pth
 ```
@@ -364,22 +377,3 @@ framework/
 ```
 
 ---
-
-## Citation
-
-If you find this work useful in your research, please cite our paper:
-
-```bibtex
-@inproceedings{kumar2026egasn,
-  title     = {Hybrid Segmentation Framework for Autonomous Vehicle Road Scene Understanding},
-  author    = {Kumar, Amit and Bhardwaj, Harsh and Pandit, Ritesh Kumar},
-  booktitle = {Proceedings of the Capstone Project / Conference on Computer Vision and Autonomous Systems},
-  year      = {2026}
-}
-```
-
----
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
